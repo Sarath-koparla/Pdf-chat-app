@@ -29,7 +29,6 @@ class logindata(BaseModel):
     email:str
     passw:str
            
-
 @app.post("/login")
 
 def loginp(logg : logindata):
