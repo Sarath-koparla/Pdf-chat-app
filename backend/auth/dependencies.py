@@ -5,26 +5,34 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
-
 SECRET_KEY = "your-secret-key"
 ALGORITHM = "HS256"
 
-# This tells FastAPI where the token will come from
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-# What we expect inside the token
 class TokenData(BaseModel):
     email: str | None = None
 
-# Core function: to get current user from JWT
-def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
     try:
-        # Decode the JWT token using secret and algorithm
+        # ✅ Step 1: Decode the JWT securely
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")  # "sub" is the subject = email
+
+        # ✅ Step 2: Extract subject (`sub`) from token payload
+        email: str = payload.get("sub")
+
         if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token payload")
-        return TokenData(email=email)
+            raise credentials_exception
+
+        # ✅ Step 3: Return current user details
+        return {"email": email}
 
     except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        # ⚠️ Invalid signature, malformed token, or expired → reject
+        raise credentials_exception
