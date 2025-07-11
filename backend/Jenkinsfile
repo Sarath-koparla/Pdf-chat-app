@@ -1,48 +1,63 @@
 pipeline {
   agent any
-
   environment {
     APP_DIR = "backend"
     IMAGE_NAME = "pdf-chat-backend"
     CONTAINER_NAME = "pdf-backend-test"
   }
-
+ 
   stages {
-    stage('Checkout Code') {
+    stage('Checkout') {
       steps {
         git branch: 'feature/api-setup', url: 'https://github.com/Sarath-koparla/Pdf-chat-app.git'
       }
     }
-
-    stage('Build Docker Image') {
+ 
+    stage('Run Tests') {
+      steps {
+        dir("${APP_DIR}") {
+          sh 'pytest tests/ --junitxml=results.xml'
+        }
+      }
+    }
+ 
+    stage('Build Image') {
       steps {
         dir("${APP_DIR}") {
           script {
-            echo "Building Docker image..."
-            sh 'docker build -t $IMAGE_NAME .'
+            def tag = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+            env.IMAGE_TAG = tag
+            sh "docker build -t $IMAGE_NAME:$tag ."
           }
         }
       }
     }
-
-    stage('Run Container (Test)') {
+ 
+    stage('Health Check') {
       steps {
         script {
-          echo "Running Docker container (may fail if code not ready)..."
-          sh '''
-            docker run -d --rm -p 8000:8000 --name $CONTAINER_NAME $IMAGE_NAME || true
+          sh """
+            docker run -d --name $CONTAINER_NAME -p 8000:8000 $IMAGE_NAME:$IMAGE_TAG
             sleep 5
-            curl -f http://localhost:8000/docs || echo "App not ready yet"
-          '''
+            curl --retry 5 --retry-delay 3 --fail http://localhost:8000/docs || (docker logs $CONTAINER_NAME && exit 1)
+          """
         }
       }
     }
   }
-
+ 
   post {
     always {
       echo "Cleaning up..."
-      sh 'docker rm -f $CONTAINER_NAME || true'
+      sh "docker rm -f $CONTAINER_NAME || true"
+    }
+ 
+    success {
+      echo "Build and test successful"
+    }
+ 
+    failure {
+      echo "Build or test failed. Logs collected."
     }
   }
 }
